@@ -15,7 +15,7 @@ holidays = {
     12: [1, 25, 26]  # December 25 and 26
 }
 
-def draw_calendar(c, year, month, x, y, width_offset, height_offset, month_font=("Helvetica-Bold", 13), day_font=("Helvetica-Bold", 12)):
+def draw_calendar(c, year, month, x, y, width_offset, height_offset, month_font=("Helvetica-Bold", 12), day_font=("Helvetica-Bold", 11)):
     """
     Draws the calendar for a specific month.
 
@@ -35,8 +35,8 @@ def draw_calendar(c, year, month, x, y, width_offset, height_offset, month_font=
     month_name_str = month_name[month]  # Get the month name
     
     # Draw the border around the month, including week numbers
-    c.setLineWidth(0.5)
-    c.rect(x + width_offset - 1.5 * cm, y + height_offset + 55, 8.5 * cm, 5.5 * cm)  # Adjust height to 8 cm
+    c.setLineWidth(1)
+    #c.rect(x + width_offset - 1.5 * cm, y + height_offset + 55, 8.5 * cm, 5.5 * cm)  # Adjust height to 8 cm
 
     # Draw the month name
     c.setFont(month_font[0], month_font[1])
@@ -130,18 +130,18 @@ def create_full_year_calendar_pdf(filename, year):
     width, height = landscape(A4)  # A4 page dimensions
     
     # Draw year at the top of the page
-    c.setFont("Helvetica-Bold", 20)
-    c.drawCentredString(width / 2, height - 1 * cm, str(year))
+    c.setFont("Helvetica-Bold", 18)
+    c.drawCentredString(width / 2, height - 0.5 * cm, str(year))
     
     # Dimensions and offsets for month placement on page
     x_offsets = [2 * cm, 12 * cm, 22 * cm]  # X positions for three columns
-    y_offsets = [height - 2 * cm - i * 7 * cm for i in range(4)]  # Y positions for four rows
+    y_offsets = [height - 8.5 * cm - i * 5 * cm for i in range(4)]  # Y positions for four rows
 
     month = 1
     for y_offset in y_offsets:
         for x_offset in x_offsets:
             if month <= 12:
-                draw_calendar(c, year, month, x_offset, y_offset, 8, 7)
+                draw_calendar(c, year, month, x_offset, y_offset, 13, 12)
                 month += 1
 
     c.save()  # Save PDF
