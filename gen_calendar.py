@@ -64,7 +64,7 @@ def draw_calendar(c, year, month, x, y, width_offset, height_offset, month_font=
         week_number = date(year, month, first_day_of_week).isocalendar()[1]
         
         # Draw week number
-        c.setFillColor(black)
+        c.setFillColor(gray)
         c.drawString(x + width_offset - 1.2 * cm, y + (height_offset) + (9 - week_num) * 0.7 * cm, str(week_number))
         
         # Draw month days
