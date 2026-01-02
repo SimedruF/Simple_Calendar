@@ -6,6 +6,9 @@ from reportlab.lib.colors import red, black, gray
 from calendar import month_name, Calendar
 from datetime import date, datetime
 import os
+import tempfile
+from PIL import Image
+import io
 
 # Default holidays (Romanian legal holidays - non-working days)
 default_holidays = {
@@ -205,13 +208,14 @@ def draw_calendar(c, year, month, x, y, width_offset, height_offset, holidays_di
             for i, day in enumerate(week):
                 if day != 0 and day in month_birthdays:
                     square_x = x + width_offset + (i + add_x_offset) * cm
-                    square_y = y + (height_offset) + (9 - week_num) * 0.7 * cm
-                    square_size = (0.35 * cm) * (day_font[1] / 11)  # Scale with font size
+                    square_y = y + (height_offset) + (9 - week_num) * 0.7 * cm + 0.1 * cm  # Moved 1mm up
+                    square_width = (0.35 * cm) * (day_font[1] / 11)  # Scale with font size
+                    square_height = (0.28 * cm) * (day_font[1] / 11)  # Slightly shorter height
                     
                     c.setStrokeColorRGB(birthday_square_color[0], birthday_square_color[1], birthday_square_color[2])
                     c.setLineWidth(1.5)
-                    c.rect(square_x - square_size, square_y - square_size, 
-                           square_size * 2, square_size * 2, stroke=1, fill=0)
+                    c.rect(square_x - square_width, square_y - square_height, 
+                           square_width * 2, square_height * 2, stroke=1, fill=0)
             week_num += 1
     
     c.setFillColorRGB(normal_text_color[0], normal_text_color[1], normal_text_color[2])  # Reset color
@@ -282,6 +286,215 @@ def create_full_year_calendar_pdf(filename, year, holidays_dict, month_font=("He
                 month += 1
 
     c.save()
+
+def preview_calendar_callback():
+    """Callback function for previewing calendar."""
+    year = dpg.get_value("year_input")
+    format_type = dpg.get_value("format_combo")
+    
+    # Get font settings
+    font_family = dpg.get_value("font_family")
+    font_style = dpg.get_value("font_style")
+    month_font_size = dpg.get_value("month_font_size")
+    day_font_size = dpg.get_value("day_font_size")
+    
+    # Build font names
+    if font_family == "Times-Roman":
+        font_map = {
+            "Normal": "Times-Roman",
+            "Bold": "Times-Bold",
+            "Italic": "Times-Italic",
+            "Bold-Italic": "Times-BoldItalic"
+        }
+        font_name = font_map[font_style]
+    else:
+        style_suffix = {
+            "Normal": "",
+            "Bold": "-Bold",
+            "Italic": "-Oblique",
+            "Bold-Italic": "-BoldOblique"
+        }
+        font_name = font_family + style_suffix[font_style]
+    
+    month_font = (font_name, month_font_size)
+    day_font = (font_name, day_font_size)
+    
+    # Get colors with default values if not yet set
+    bg_rgb = dpg.get_value("bg_color") or (255, 255, 255, 255)
+    bg_color = (bg_rgb[0]/255, bg_rgb[1]/255, bg_rgb[2]/255)
+    
+    normal_rgb = dpg.get_value("text_color") or (0, 0, 0, 255)
+    normal_text_color = (normal_rgb[0]/255, normal_rgb[1]/255, normal_rgb[2]/255)
+    
+    weekend_rgb = dpg.get_value("weekend_bg_color") or (240, 240, 240, 255)
+    weekend_bg_color = (weekend_rgb[0]/255, weekend_rgb[1]/255, weekend_rgb[2]/255)
+    
+    holiday_rgb = dpg.get_value("holiday_bg_color") or (255, 230, 230, 255)
+    holiday_bg_color = (holiday_rgb[0]/255, holiday_rgb[1]/255, holiday_rgb[2]/255)
+    
+    week_num_text_rgb = dpg.get_value("week_num_text_color") or (128, 128, 128, 255)
+    week_num_text_color = (week_num_text_rgb[0]/255, week_num_text_rgb[1]/255, week_num_text_rgb[2]/255)
+    
+    week_num_bg_rgb = dpg.get_value("week_num_bg_color") or (255, 255, 255, 255)
+    week_num_bg_color = (week_num_bg_rgb[0]/255, week_num_bg_rgb[1]/255, week_num_bg_rgb[2]/255)
+    
+    equinox_rgb = dpg.get_value("equinox_circle_color") or (0, 128, 255, 255)
+    equinox_circle_color = (equinox_rgb[0]/255, equinox_rgb[1]/255, equinox_rgb[2]/255)
+    
+    moon_phase_rgb = dpg.get_value("moon_phase_color") or (76, 76, 153, 255)
+    moon_phase_color = (moon_phase_rgb[0]/255, moon_phase_rgb[1]/255, moon_phase_rgb[2]/255)
+    
+    show_week_numbers = dpg.get_value("show_week_numbers") if dpg.get_value("show_week_numbers") is not None else True
+    highlight_holidays = dpg.get_value("highlight_holidays") if dpg.get_value("highlight_holidays") is not None else True
+    show_equinoxes = dpg.get_value("show_equinoxes") if dpg.get_value("show_equinoxes") is not None else False
+    show_moon_phases = dpg.get_value("show_moon_phases") if dpg.get_value("show_moon_phases") is not None else False
+    moon_phase_size = dpg.get_value("moon_phase_size") or 10
+    
+    show_birthdays = dpg.get_value("show_birthdays") if dpg.get_value("show_birthdays") is not None else False
+    birthday_square_rgb = dpg.get_value("birthday_square_color") or (255, 191, 204, 255)
+    birthday_square_color = (birthday_square_rgb[0]/255, birthday_square_rgb[1]/255, birthday_square_rgb[2]/255)
+    
+    # Get birthdays
+    birthdays_dict = {}
+    for month in range(1, 13):
+        birthdays_input = dpg.get_value(f"birthdays_{month}")
+        if birthdays_input:
+            try:
+                birthday_days = [int(d.strip()) for d in birthdays_input.split(',') if d.strip()]
+                birthdays_dict[month] = [d for d in birthday_days if 1 <= d <= 31]
+            except ValueError:
+                birthdays_dict[month] = []
+        else:
+            birthdays_dict[month] = []
+    
+    # Get holidays
+    holidays_dict = {}
+    for month in range(1, 13):
+        holidays_dict[month] = []
+        for day in default_holidays.get(month, []):
+            if dpg.get_value(f"holiday_{month}_{day}"):
+                holidays_dict[month].append(day)
+    
+    for month in range(1, 13):
+        custom_input = dpg.get_value(f"custom_{month}")
+        if custom_input:
+            try:
+                custom_days = [int(d.strip()) for d in custom_input.split(',') if d.strip()]
+                holidays_dict[month].extend([d for d in custom_days if 1 <= d <= 31 and d not in holidays_dict[month]])
+            except ValueError:
+                pass
+    
+    try:
+        # Generate temporary PDFs for both formats
+        with tempfile.NamedTemporaryFile(suffix='_4months.pdf', delete=False) as tmp_pdf1:
+            tmp_pdf1_path = tmp_pdf1.name
+        with tempfile.NamedTemporaryFile(suffix='_12months.pdf', delete=False) as tmp_pdf2:
+            tmp_pdf2_path = tmp_pdf2.name
+        
+        # Generate 4 months/page calendar
+        create_calendar_pdf(tmp_pdf1_path, year, holidays_dict, month_font, day_font, bg_color, normal_text_color, weekend_bg_color, holiday_bg_color, week_num_text_color, week_num_bg_color, show_week_numbers, highlight_holidays, show_equinoxes, equinox_circle_color, show_moon_phases, moon_phase_color, moon_phase_size, show_birthdays, birthdays_dict, birthday_square_color)
+        
+        # Generate 12 months/page calendar
+        create_full_year_calendar_pdf(tmp_pdf2_path, year, holidays_dict, month_font, day_font, bg_color, normal_text_color, weekend_bg_color, holiday_bg_color, week_num_text_color, week_num_bg_color, show_week_numbers, highlight_holidays, show_equinoxes, equinox_circle_color, show_moon_phases, moon_phase_color, moon_phase_size, show_birthdays, birthdays_dict, birthday_square_color)
+        
+        # Convert PDFs to images using pdf2image
+        try:
+            from pdf2image import convert_from_path
+            
+            # Convert first format (4 months/page)
+            images1 = convert_from_path(tmp_pdf1_path, dpi=150, first_page=1, last_page=1)
+            
+            # Convert second format (12 months/page)
+            images2 = convert_from_path(tmp_pdf2_path, dpi=150, first_page=1, last_page=1)
+            
+            # Create preview windows for both formats
+            if images1:
+                # Save first page as temporary PNG
+                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_png:
+                    tmp_png1_path = tmp_png.name
+                
+                images1[0].save(tmp_png1_path, 'PNG')
+                
+                # Load and display in Dear PyGui window
+                width1, height1, channels1, data1 = dpg.load_image(tmp_png1_path)
+                
+                # Scale image to fit window (max 700px width)
+                scale1 = min(1.0, 700 / width1)
+                display_width1 = int(width1 * scale1)
+                display_height1 = int(height1 * scale1)
+                
+                # Create or update first preview window
+                if dpg.does_item_exist("preview_window_1"):
+                    dpg.delete_item("preview_window_1")
+                
+                with dpg.window(label="Preview: 4 Months/Page", tag="preview_window_1", width=display_width1 + 50, height=display_height1 + 100, pos=[50, 50]):
+                    if dpg.does_item_exist("preview_texture_1"):
+                        dpg.delete_item("preview_texture_1")
+                    
+                    with dpg.texture_registry():
+                        dpg.add_static_texture(width1, height1, data1, tag="preview_texture_1")
+                    
+                    dpg.add_image("preview_texture_1", width=display_width1, height=display_height1)
+                    dpg.add_button(label="Close Preview", callback=lambda: dpg.delete_item("preview_window_1"), width=200)
+                
+                # Clean up temp files
+                try:
+                    os.unlink(tmp_png1_path)
+                except:
+                    pass
+            
+            if images2:
+                # Save second page as temporary PNG
+                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_png:
+                    tmp_png2_path = tmp_png.name
+                
+                images2[0].save(tmp_png2_path, 'PNG')
+                
+                # Load and display in Dear PyGui window
+                width2, height2, channels2, data2 = dpg.load_image(tmp_png2_path)
+                
+                # Scale image to fit window (max 900px width for landscape)
+                scale2 = min(1.0, 900 / width2)
+                display_width2 = int(width2 * scale2)
+                display_height2 = int(height2 * scale2)
+                
+                # Create or update second preview window (offset to the right)
+                if dpg.does_item_exist("preview_window_2"):
+                    dpg.delete_item("preview_window_2")
+                
+                with dpg.window(label="Preview: 12 Months/Page", tag="preview_window_2", width=display_width2 + 50, height=display_height2 + 100, pos=[display_width1 + 100, 50]):
+                    if dpg.does_item_exist("preview_texture_2"):
+                        dpg.delete_item("preview_texture_2")
+                    
+                    with dpg.texture_registry():
+                        dpg.add_static_texture(width2, height2, data2, tag="preview_texture_2")
+                    
+                    dpg.add_image("preview_texture_2", width=display_width2, height=display_height2)
+                    dpg.add_button(label="Close Preview", callback=lambda: dpg.delete_item("preview_window_2"), width=200)
+                
+                # Clean up temp files
+                try:
+                    os.unlink(tmp_png2_path)
+                except:
+                    pass
+            
+        except ImportError:
+            dpg.set_value("status_text", "Error: pdf2image not installed. Install with: pip install pdf2image")
+            dpg.configure_item("status_text", color=(255, 100, 100))
+        except Exception as e:
+            dpg.set_value("status_text", f"Preview error: {str(e)}")
+            dpg.configure_item("status_text", color=(255, 100, 100))
+        
+        # Clean up temp PDFs
+        try:
+            os.unlink(tmp_pdf1_path)
+            os.unlink(tmp_pdf2_path)
+        except:
+            pass
+            
+    except Exception as e:
+        dpg.set_value("status_text", f"Error: {str(e)}")
+        dpg.configure_item("status_text", color=(255, 100, 100))
 
 def generate_calendar_callback():
     """Callback function for generating calendar PDFs."""
@@ -418,6 +631,15 @@ def create_gui():
     
     current_year = datetime.now().year
     
+    # Load and set Roboto font
+    with dpg.font_registry():
+        # Try to load Roboto from system fonts
+        roboto_path = "/usr/share/fonts/truetype/Roboto-Regular.ttf"
+        if os.path.exists(roboto_path):
+            default_font = dpg.add_font(roboto_path, 16)
+        else:
+            default_font = None
+    
     # Load icons as textures
     icon_textures = {}
     icon_names = ["basic", "fonts", "colors", "features", "holidays", "birthdays"]
@@ -429,12 +651,18 @@ def create_gui():
             with dpg.texture_registry():
                 icon_textures[icon_name] = dpg.add_static_texture(width, height, data, tag=f"{icon_name}_texture")
     
+    # Bind the font if it was loaded
+    if default_font:
+        dpg.bind_font(default_font)
+    
     with dpg.window(label="Calendar Generator", tag="primary_window", width=1000, height=750, no_close=True):
-        # Top bar with title and generate button
+        # Top bar with title and buttons
         with dpg.group(horizontal=True):
             dpg.add_text("PDF Calendar Generator", color=(100, 200, 255))
-            dpg.add_spacer(width=400)
-            dpg.add_button(label="Generate Calendar", callback=generate_calendar_callback, width=250, height=35)
+            dpg.add_spacer(width=250)
+            dpg.add_button(label="Preview Calendar", callback=preview_calendar_callback, width=200, height=35)
+            dpg.add_spacer(width=10)
+            dpg.add_button(label="Generate Calendar", callback=generate_calendar_callback, width=200, height=35)
         
         dpg.add_separator()
         dpg.add_spacer(height=10)
