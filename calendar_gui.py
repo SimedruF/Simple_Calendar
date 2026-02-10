@@ -400,12 +400,21 @@ def preview_calendar_callback():
         # Convert PDFs to images using pdf2image
         try:
             from pdf2image import convert_from_path
+            import glob
+            
+            # Find poppler path
+            poppler_path = None
+            winget_packages = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Microsoft', 'WinGet', 'Packages')
+            if os.path.exists(winget_packages):
+                poppler_dirs = glob.glob(os.path.join(winget_packages, 'oschwartz10612.Poppler*', 'poppler-*', 'Library', 'bin'))
+                if poppler_dirs:
+                    poppler_path = poppler_dirs[0]
             
             # Convert first format (4 months/page)
-            images1 = convert_from_path(tmp_pdf1_path, dpi=150, first_page=1, last_page=1)
+            images1 = convert_from_path(tmp_pdf1_path, dpi=150, first_page=1, last_page=1, poppler_path=poppler_path)
             
             # Convert second format (12 months/page)
-            images2 = convert_from_path(tmp_pdf2_path, dpi=150, first_page=1, last_page=1)
+            images2 = convert_from_path(tmp_pdf2_path, dpi=150, first_page=1, last_page=1, poppler_path=poppler_path)
             
             # Create preview windows for both formats
             if images1:
